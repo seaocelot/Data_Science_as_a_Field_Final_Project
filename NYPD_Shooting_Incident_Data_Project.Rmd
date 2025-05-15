@@ -1,0 +1,461 @@
+```{r}
+library(tidyverse) 
+library(Hmisc)
+library(ggplot2)
+require(gridExtra)
+library(caTools) 
+library(randomForest) 
+library(Metrics)
+library(caret)
+```
+
+# Data Science as a Field
+
+## Week 3 Peer Review Assignment
+
+## Random forest models will be generated to see how well values for the variable STATISTICAL_MURDER_FLAG can be predicted from a selection of other variables from the data set "NYPD Shooting Incident Data (Historic)." The random forest models are generated in the section of the notebook called "Data Analysis and Model Building".
+
+# Description of Data:
+## The data set that will be imported is called "NYPD Shooting Incident Data (Historic)." It is located at the Data.Gov web site and the various files that contain the data set in different formats are available at the following web address: https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic. 
+
+## The data set contains information about shooting events that took place in New York City starting from the year 2006. Information about each shooting includes information like the date, time, information about the location, precinct, jurisdiction, information about the victim, and information about the perpetrator.
+
+    
+
+## The file is opened using a method that is reproducible.
+
+```{r}
+file_path = "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD" 
+
+data_NYPD <- read.csv(file_path, header = TRUE, sep = ",") 
+```
+
+## The dimensions of the data frame are shown.
+
+```{r}
+print(paste("The number of columns is: ", ncol(data_NYPD)))
+
+print(paste("The number of rows is: ", nrow(data_NYPD)))
+```
+
+## Here is the head of the data frame.
+
+```{r}
+head(data_NYPD)
+```
+
+## Here is the summary of the data frame.
+
+```{r}
+summary(data_NYPD)
+```
+
+# Data Cleaning and Tidying:
+
+## Values of blank, (null) and UNKNOWN are converted to NA values.
+
+```{r}
+data_NYPD[data_NYPD == ""] <- NA
+data_NYPD[data_NYPD == "(null)"] <- NA
+data_NYPD[data_NYPD == "UNKNOWN"] <- NA
+```
+
+## The total number of NA values are counted and summarized. Several columns show that NA values exist.
+
+```{r}
+colSums(is.na(data_NYPD))
+```
+
+## Since the columns LOC_OF_OCCUR_DESC and LOC_CLASSFCTN_DESC are missing over 25,000 values each, I decided to remove each of those columns from the data set.
+
+```{r}
+data_NYPD_mod <- subset(data_NYPD, select = -c(LOC_OF_OCCUR_DESC, LOC_CLASSFCTN_DESC))
+```
+
+## All NA values are removed from the data set.
+
+```{r}
+data_NYPD_mod <- na.omit(data_NYPD_mod)
+```
+
+## The total number of NA values is again counted and summarized to check to see that no NA values remain.
+
+```{r}
+colSums(is.na(data_NYPD_mod))
+```
+
+## The dimensions of the modified data frame are shown. 
+
+## The number of columns is now 19 and the number of rows have decreased dramatically to 6757. I realize that a very large number of observations have been removed from the data. This is unfortunate because it means that a large number of incidents will not be part of the analysis. A way around this is to impute data for the NA values and maintain a larger number of observations in the data set. A drawback to doing this is that the data that is imputed may be far removed from reality. I made the the judgement call to remove any observations from the data set that were missing data so that the analysis was being done on data that is completely real. I understand that other people may feel that trying to impute some or all of the missing data may be a better approach.
+
+```{r}
+print(paste("The number of columns is: ", ncol(data_NYPD_mod)))
+
+print(paste("The number of rows is: ", nrow(data_NYPD_mod)))
+```
+
+## The column OCCUR_DATA is converted to the month only that the incident occured. I did this to simplify the data because I wanted to see the effect that the month had on whether or not the victim passed away. It is also easier to visualize the data in a bar graph. A new column OCCUR_DATE_MONTH is added to the data frame.
+
+```{r}
+dates = as.Date(data_NYPD_mod$OCCUR_DATE, format = "%m/%d/%Y")
+month <- format(dates, "%m")
+data_NYPD_mod$OCCUR_DATE_MONTH <- month
+```
+
+## The column OCCUR_TIME is converted to the hour only that the incident occured. I did this to simplify the data because it is much easier to visualize the simplified data in a bar graph. A new column OCCUR_TIME_HOUR is added to the data frame.
+
+```{r}
+times = as.POSIXct(data_NYPD_mod$OCCUR_TIME, format = "%H:%M:%S")
+hour <- format(times, "%H")
+data_NYPD_mod$OCCUR_TIME_HOUR <- hour
+```
+
+## The values in the Latitude column are converted to numeric values and a new column Latitude_num is added to the data frame.
+
+```{r}
+Latitude_numbers = as.numeric(data_NYPD_mod$Latitude)
+data_NYPD_mod$Latitude_num = Latitude_numbers
+```
+
+## The values in the Longitude column are converted to numeric values and a new column Longitude_num is added to the data frame.
+
+```{r}
+Longitude_numbers = as.numeric(data_NYPD_mod$Longitude)
+data_NYPD_mod$Longitude_num = Longitude_numbers
+```
+
+## When I made the plots for data from several columns of the data frame, some rogue values popped up for the column PERP_AGE_GROUP. The number of these rogue values was very small so I decided to remove those observations from the data set.
+
+```{r}
+data_NYPD_mod = data_NYPD_mod[data_NYPD_mod$PERP_AGE_GROUP != 1020, ] 
+
+data_NYPD_mod = data_NYPD_mod[data_NYPD_mod$PERP_AGE_GROUP != 224, ] 
+
+data_NYPD_mod = data_NYPD_mod[data_NYPD_mod$PERP_AGE_GROUP != 940, ] 
+```
+
+## Below are plots for the variables that will be used in my analysis.
+
+```{r}
+options(repr.plot.width = 22, repr.plot.height = 8) 
+
+plot_1 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = OCCUR_DATE_MONTH), fill = "darkorange3")
+
+plot_2 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = OCCUR_TIME_HOUR), fill = "darkolivegreen" ) 
+
+plot_3 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = BORO), fill = "darkmagenta") 
+
+grid.arrange(plot_1, plot_2, plot_3, nrow = 1)
+```
+
+```{r}
+options(repr.plot.width = 22, repr.plot.height = 8) 
+
+plot_4 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = PRECINCT), fill = "darkorange3")
+
+plot_5 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = JURISDICTION_CODE), fill = "darkolivegreen" ) 
+
+plot_6 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = LOCATION_DESC), fill = "darkmagenta") 
+
+grid.arrange(plot_4, plot_5, plot_6, nrow = 1)
+```
+
+```{r}
+options(repr.plot.width = 22, repr.plot.height = 8) 
+
+plot_7 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = PERP_AGE_GROUP), fill = "darkorange3")
+
+plot_8 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = PERP_SEX), fill = "darkolivegreen" ) 
+
+plot_9 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = PERP_RACE), fill = "darkmagenta") +
+guides(x =  guide_axis(angle = 90))
+
+grid.arrange(plot_7, plot_8, plot_9, nrow = 1)
+```
+
+```{r}
+options(repr.plot.width = 22, repr.plot.height = 8) 
+
+plot_10 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = VIC_AGE_GROUP), fill = "darkorange3")
+
+plot_11 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = VIC_SEX), fill = "darkolivegreen" ) 
+
+plot_12 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = VIC_RACE), fill = "darkmagenta") +
+guides(x =  guide_axis(angle = 90))
+
+grid.arrange(plot_10, plot_11, plot_12, nrow = 1)
+```
+
+```{r}
+options(repr.plot.width = 22, repr.plot.height = 8) 
+
+plot_13 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = STATISTICAL_MURDER_FLAG), fill = "darkorange3")
+
+plot_14 <- ggplot(data = data_NYPD_mod) +
+geom_histogram(mapping = aes(x = Latitude_num), bins = 60, fill = "darkolivegreen")
+
+plot_15 <- ggplot(data = data_NYPD_mod) +
+geom_histogram(mapping = aes(x = Longitude_num), bins = 60, fill = "darkmagenta")
+
+grid.arrange(plot_13, plot_14, plot_15, nrow = 1)
+```
+
+## The bar graph for LOCATION_DESC is shown again in a larger size to help visualize the data better.
+
+```{r}
+plot_16 <- ggplot(data = data_NYPD_mod) +
+geom_bar(mapping = aes(x = LOCATION_DESC), fill = "darkmagenta") +
+guides(x =  guide_axis(angle = 90))
+
+plot_16
+```
+
+## Below is a summary of what the data frame currently includes.
+
+```{r}
+summary(data_NYPD_mod)
+```
+
+## Below is a selection of predictor variables that will be included in the analysis and that need to be converted to numerical form for the model to be generated properly. The function model.matrix() converts the selected predictor variable binary form using one hot encoding.
+
+```{r}
+data_NYPD_BORO_one_hot <- model.matrix(~ BORO - 1, data_NYPD_mod) 
+data_NYPD_PRECINCT_one_hot <- model.matrix(~ PRECINCT - 1, data_NYPD_mod) 
+data_NYPD_JURISDICTION_CODE_one_hot <- model.matrix(~ JURISDICTION_CODE - 1, data_NYPD_mod) 
+data_NYPD_LOCATION_DESC_one_hot <- model.matrix(~ LOCATION_DESC - 1, data_NYPD_mod) 
+data_NYPD_PERP_AGE_GROUP_one_hot <- model.matrix(~ PERP_AGE_GROUP - 1, data_NYPD_mod) 
+data_NYPD_PERP_SEX_one_hot <- model.matrix(~ PERP_SEX - 1, data_NYPD_mod) 
+data_NYPD_PERP_RACE_one_hot <- model.matrix(~ PERP_RACE - 1, data_NYPD_mod) 
+data_NYPD_VIC_AGE_GROUP_one_hot <- model.matrix(~ VIC_AGE_GROUP - 1, data_NYPD_mod) 
+data_NYPD_VIC_SEX_one_hot <- model.matrix(~ VIC_SEX - 1, data_NYPD_mod) 
+data_NYPD_VIC_RACE_one_hot <- model.matrix(~ VIC_RACE - 1, data_NYPD_mod) 
+data_NYPD_OCCUR_DATE_MONTH_one_hot <- model.matrix(~ OCCUR_DATE_MONTH - 1, data_NYPD_mod) 
+data_NYPD_OCCUR_TIME_HOUR_one_hot <- model.matrix(~ OCCUR_TIME_HOUR - 1, data_NYPD_mod)
+```
+
+## The response variable STATISTICAL_MURDER_FLAG is converted to a factor so the model runs properly.
+
+```{r}
+data_NYPD_mod$STATISTICAL_MURDER_FLAG <- as.factor(data_NYPD_mod$STATISTICAL_MURDER_FLAG)
+```
+
+## All of the variables that were converted to numerical form using one hot encoding are combined with the variables Latitude_num, Longitude_num, and STATISTICAL_MURDER_FLAG into a new data frame. This data frame is the one that will be used in the analysis.
+
+```{r}
+data_NYPD_analysis <- cbind(data_NYPD_BORO_one_hot, data_NYPD_PRECINCT_one_hot, data_NYPD_JURISDICTION_CODE_one_hot, data_NYPD_LOCATION_DESC_one_hot, data_NYPD_PERP_AGE_GROUP_one_hot, data_NYPD_PERP_SEX_one_hot, data_NYPD_PERP_RACE_one_hot, data_NYPD_VIC_AGE_GROUP_one_hot, data_NYPD_VIC_SEX_one_hot, data_NYPD_VIC_RACE_one_hot, data_NYPD_OCCUR_DATE_MONTH_one_hot, data_NYPD_OCCUR_TIME_HOUR_one_hot, data_NYPD_mod$Latitude_num, data_NYPD_mod$Longitude_num, data_NYPD_mod$STATISTICAL_MURDER_FLAG)
+```
+
+```{r}
+# calculate number of columns in data frame to find index numbers to help add names to some columns
+ncol(data_NYPD_analysis)
+```
+
+## Some columns in the data frame need to have names added to them.
+
+```{r}
+colnames(data_NYPD_analysis)[108] <- "Latitude"
+
+colnames(data_NYPD_analysis)[109] <- "Longitude"
+
+colnames(data_NYPD_analysis)[110] <- "STATISTICAL_MURDER_FLAG"
+
+data_NYPD_analysis = data.frame(data_NYPD_analysis)
+```
+
+## Values in column STATISTICAL_MURDER_FLAG are currently 2's and 1's. The 2's are converted to 1's and the 1's are converted to 0's. The value 1 stands for True and the value 0 stands for False.
+
+```{r}
+data_NYPD_analysis$STATISTICAL_MURDER_FLAG[data_NYPD_analysis$STATISTICAL_MURDER_FLAG == 1] <- 0
+
+data_NYPD_analysis$STATISTICAL_MURDER_FLAG[data_NYPD_analysis$STATISTICAL_MURDER_FLAG == 2] <- 1
+```
+
+## Below is the head of the data frame that will be used in the analysis.
+
+```{r}
+head(data_NYPD_analysis)
+```
+
+## Create train data and test data for the analysis.
+
+```{r}
+set.seed(834)
+
+sample_choose = c(TRUE, FALSE)
+
+sample_size = nrow(data_NYPD_analysis) 
+
+TRUE_FALSE_rows <- sample(sample_choose, sample_size, replace=TRUE, prob=c(0.8,0.2))
+
+train_data  <- data_NYPD_analysis[TRUE_FALSE_rows, ]
+
+test_data   <- data_NYPD_analysis[!TRUE_FALSE_rows, ]
+
+train_data_df = data.frame(train_data)
+
+test_data_df = data.frame(test_data)
+```
+
+# Data Analysis and Model Building:
+
+## Random forest models will be generated. The response variable is STATISTICAL_MURDER_FLAG and the predictor variables used in the models are the remaining variables contained in the data frame above called "data_NYPD_analysis". The objective of the random forest model is to see how well the predictor variables can predict whether or not the victim of the crime dies. 
+
+## Below a function is created called forest_model that will be used to generate random forest models for the data. A confusion matrix and scores for accuracy, recall, precision, and F1 score will also be calculated.
+
+```{r}
+forest_model <- function(train_data_df, test_data_df, nodesize, ntree) {
+    set.seed(94)
+    forest_model <- randomForest(as.factor(STATISTICAL_MURDER_FLAG) ~., data = train_data_df, nodesize = nodesize, ntree = ntree, type = 'classification')
+    predicted_data = predict(forest_model, newdata = test_data_df[, 1:109]) 
+    predicted_data = as.factor(predicted_data)
+    actual_data = test_data_df[, 110]
+    actual_data = as.factor(actual_data)
+    confusion_matrix = table(actual_data, predicted_data) 
+    print("The confusion matrix is: ")
+    print(confusion_matrix)
+    accuracy <- accuracy(actual_data, predicted_data)
+    print(paste("The accuracy score is: ", accuracy))
+    recall_score <- recall(actual_data, predicted_data)
+    print(paste("The recall score is: ", recall_score))
+    precision_score <- precision(actual_data, predicted_data)
+    print(paste("The precision score is: ", precision_score))
+    f1_score <- f1(actual_data, predicted_data)
+    print(paste("The f1 score is: ", f1_score)) 
+}
+```
+
+## Below a number of random forest models are generated. For each model, the node size and number of trees is tuned. The confusion matrix and performance metrics are calcualted for each model.
+
+## Model 1: node size = 15, number trees = 75
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 15, ntree = 75)
+```
+
+## Model 2: node size = 25, number trees = 75
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 25, ntree = 75)
+```
+
+## Model 3: node size = 35, number trees = 75
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 35, ntree = 75)
+```
+
+## Model 4: node size = 25, number trees = 50
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 25, ntree = 50)
+```
+
+## Model 5: node size = 25, number trees = 100
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 25, ntree = 100)
+```
+
+## Model 6: node size = 25, number trees = 125
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 25, ntree = 125)
+```
+
+## Model 7: node size = 25, number trees = 150
+
+```{r}
+forest_model(train_data_df = train_data_df, test_data_df = test_data_df, nodesize = 25, ntree = 150)
+```
+
+# Results:
+
+```{r}
+# create table to summarize results of seven models
+Model_1 = c("0.709183673469388", "0.720877458396369", "0.969481180061038", "1")
+Model_2 = c("0.721574344023324", "0.724421209858103", "0.98677517802645", "1")
+Model_3 = c("0.719387755102041", "0.721810089020771", "0.989827060020346", "1")
+Model_4 = c("0.717930029154519", "0.72272047832586", "0.983723296032553", "1")
+Model_5 = c("0.719387755102041", "0.722470238095238", "0.987792472024415", "1")
+Model_6 = c("0.720116618075802", "0.723008190618019", "0.987792472024415", "1")
+Model_7 = c("0.717930029154519", "0.72172619047619", "0.98677517802645", "1")
+
+matrix_models = rbind(Model_1, Model_2, Model_3, Model_4, Model_5, Model_6, Model_7)
+
+table_models = as.table(matrix_models)
+
+colnames(table_models)[1] <- "Accuracy Score"
+colnames(table_models)[2] <- "Recall Score"
+colnames(table_models)[3] <- "Precision Score"
+colnames(table_models)[4] <- "F1 Score"
+```
+
+## Below is a summary of the performance metrics for the seven different models that were run.
+
+```{r}
+table_models
+```
+
+## Based on the accuracy score, model 2 is the best performing model with an accuracy score of 0.721574344023324. 
+
+## Below the random forest model is again generated for model 2 and it will be used to generate a plot showing the importance of predictor variables based on the Gini measurement.
+
+```{r}
+forest_model_2 <- randomForest(as.factor(STATISTICAL_MURDER_FLAG) ~., data = train_data_df, nodesize = 25, ntree = 75, type = 'classification')
+```
+
+## Below is a plot that shows the importance of predictor variables based on the Gini measurement in the random forest model 2.
+
+## The values of longitude and latitude have very large scores for Gini relative to most of the other predictor variables. The predictor variable PRECINCT also has a fairly large value for Gini.
+
+```{r}
+varImpPlot(forest_model_2) 
+```
+
+# Conclusion:
+
+## The objective of the random forest models was to generate models that took in the various predictor variables and predicted an outcome for the response variable STATISTICAL_MURDER_FLAG. Each of the seven random forest models differed by their values for the hyperparameters node size and number of trees.  
+
+## Based on the accuracy score, model 2 is the best performing model with an accuracy score of 0.721574344023324. All seven of the models had very similar accuracy, recall, precision, and F1 scores. When looking at the importance of the individual predictor variables in the random forest model for model 2, the predictor variables Longitude, Latitude, and PRECINCT are the most important based on the Gini measurement.
+
+## A source of potential bias in myself was in deciding how to handle missing data in the predictor variables of PERP_AGE_GROUP, PERP_SEX, PERP_RACE. When missing data exists in a data set, one can choose to remove the missing data or to impute values for the missing data. When one chooses to impute data, there are different ways of doing so. When thinking about ways of imputing data for the predictor variable PERP_RACE, I saw how my personal bias could affect how I imputed the data. My own race is white and when I was growing up many of the images of crime that I saw on the news were people of minority races like African American and Hispanic American. If I decided to impute data for the predictor variable PERP_RACE, is it possible that I might use a method that tended to select African American and Hispanic American as the two most common races to fill in for the missing data? As a way of mitigating my bias for the predictor variable PERP_RACE, I decided it was best to simply remove the observations from the data table that had missing data for the predictor variable PERP_RACE. By removing the missing data, this avoided the possibility of me imputing certain races for the missing data that might be far from the actual truth. I also removed any observations that had missing data for the predictor variables PERP_AGE_GROUP and PERP_SEX for similar reasons. One drawback of this approach is that a significant number of observations were removed from the data set and so a large chunk of the crime data was never analyzed. 
+
+# References:
+
+## No author. (2020, June 5) "Random Forest Approach in R Programming." *Geeks for Geeks*. https://www.geeksforgeeks.org/random-forest-approach-in-r-programming/.
+
+## No author. (2025, April 9) "Precision, Recall and F1-Score using R." *Geeks for Geeks*. https://www.geeksforgeeks.org/precision-recall-and-f1-score-using-r/.
+
+## Bobbitt, Zach. (2022, April 5) "How to Use as.Date() Function in R (With Examples)." *Statology*. https://www.statology.org/as-date-function-in-r/.
+
+## Bobbitt, Zach. (2022, April 12) "How to Split Data into Training & Test Sets in R (3 Methods)." *Statology*. https://www.statology.org/train-test-split-r/.
+
+## No author. (2021, 30 Jun) "How to Extract Time from Datetime in R ?." *Geeks for Geeks*. https://www.geeksforgeeks.org/how-to-extract-time-from-datetime-in-r/.
+
+## Amit, Hey. (2024, Nov 22) "One Hot Encoding in R." *Medium*. https://medium.com/data-scientists-diary/one-hot-encoding-in-r-14e92f6d9045.
+
+## No author. (2023, 21 Dec) "How to Find and Count Missing Values in R DataFrame." *Geeks for Geeks*. https://www.geeksforgeeks.org/how-to-find-and-count-missing-values-in-r-dataframe/.
+
+## No author. (2021, 23 Sep) "Replace Blank by NA in R DataFrame." *Geeks for Geeks*. https://www.geeksforgeeks.org/replace-blank-by-na-in-r-dataframe/.
+
+## No author. (2024, 15 Mar) "Remove rows with missing values using R." *Geeks for Geeks*. https://www.geeksforgeeks.org/remove-rows-with-missing-values-using-r/.
+
+## No author. (2021, 19 Dec) "How to Conditionally Remove Rows in R DataFrame?." *Geeks for Geeks*. https://www.geeksforgeeks.org/how-to-conditionally-remove-rows-in-r-dataframe/.
+
+## Siddiqui, Nizamuddin. (2021, 8 Nov) "Create Bar Plot of One Column in an R Data Frame Using ggplot2." *Tutorialspoint*. https://www.tutorialspoint.com/create-bar-plot-of-one-column-in-an-r-data-frame-using-ggplot2.
+
+## No author. (2021, 27 Dec) "How to Create Tables in R?." *Geeks for Geeks*. https://www.geeksforgeeks.org/how-to-create-tables-in-r/.
+
